@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Claude Cookie 切换器
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
-// @description  本地保存 claude.ai 登录 Cookie 快照，并在家庭成员账号之间切换。
+// @version      1.0.1
+// @description  本地保存 claude.ai 登录 Cookie 快照，并在家庭成员账号之间切换；自动排除 Cloudflare 风控 Cookie。
 // @author       froger
 // @match        https://claude.ai/*
 // @match        https://*.claude.ai/*
@@ -30,7 +30,8 @@
         CURRENT_PROFILE_KEY: "claude_current_profile_id",
         PANEL_STATE_KEY: "claude_panel_state_v1",
         EXPORT_VERSION: 1,
-        AUTH_COOKIE_NAMES: ["sessionKey", "sessionKeyV2", "activitySessionId"]
+        AUTH_COOKIE_NAMES: ["sessionKey", "sessionKeyV2", "activitySessionId"],
+        EXCLUDED_COOKIE_NAMES: ["cf_clearance", "__cf_bm", "_cfuvid", "__cflb", "__cfseq"]
     };
 
     const gm = {
@@ -200,7 +201,7 @@
     function normalizeCookieList(cookies) {
         const map = new Map();
         cookies.map(normalizeCookie).filter(Boolean).forEach((cookie) => {
-            if (isClaudeCookie(cookie)) {
+            if (shouldManageCookie(cookie)) {
                 map.set(cookieKey(cookie), cookie);
             }
         });
@@ -214,6 +215,15 @@
     function isClaudeCookie(cookie) {
         const domain = String(cookie?.domain || "").toLowerCase();
         return domain === constants.TARGET_HOST || domain === `.${constants.TARGET_HOST}`;
+    }
+
+    function isExcludedCookie(cookie) {
+        const name = String(cookie?.name || "").toLowerCase();
+        return constants.EXCLUDED_COOKIE_NAMES.includes(name) || name.startsWith("cf_chl_");
+    }
+
+    function shouldManageCookie(cookie) {
+        return isClaudeCookie(cookie) && !isExcludedCookie(cookie);
     }
 
     function cookieKey(cookie) {

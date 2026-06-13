@@ -12,6 +12,7 @@
 - JSON 导入、导出和复制当前账号备份
 - 本地保存数据，不上传到任何服务器
 - 面板可拖拽、可最小化
+- 自动排除 `cf_clearance`、`__cf_bm`、`_cfuvid` 等 Cloudflare 风控 Cookie，降低触发封锁页的概率
 
 ## 文件说明
 
@@ -38,6 +39,25 @@
 5. 退出或切换浏览器登录状态，再登录第二个 Claude 账号，重复上述步骤。
 
 如果提示没有读取到 Cookie，或提示缺少 `sessionKey/sessionKeyV2`，通常说明 Tampermonkey 没有拿到 `HttpOnly` Cookie。请确认使用 Tampermonkey Beta，并重新登录 Claude 后再保存。
+
+## 遇到 Cloudflare blocked 页面
+
+如果安装或切换后看到：
+
+```text
+Sorry, you have been blocked
+You are unable to access claude.ai
+```
+
+通常是 Cloudflare 风控 Cookie 被旧快照恢复、Cookie 状态异常、VPN/IP 风控或浏览器环境触发了 Claude 的安全服务。推荐按顺序处理：
+
+1. 先在 Tampermonkey 中禁用本脚本。
+2. 打开浏览器设置，清理 `claude.ai` 的站点数据和 Cookie。
+3. 关闭代理/VPN，或换回稳定的常用网络。
+4. 重新打开 [https://claude.ai/](https://claude.ai/) 并正常登录。
+5. 更新到 `v1.0.1` 或更新版本的脚本后，再点击 `保存当前` 重新保存账号。
+
+`v1.0.1` 起脚本会自动排除 Cloudflare 相关 Cookie；旧 JSON 备份导入时也会过滤这些 Cookie。
 
 ## 切换账号
 
@@ -102,8 +122,9 @@ node claude-switcher.test.js
 
 ## 版本
 
-当前版本：`v1.0.0`
+当前版本：`v1.0.1`
 
+- `v1.0.1`：排除 Cloudflare 风控 Cookie，减少 `Sorry, you have been blocked` 的风险
 - 支持 `claude.ai` Cookie 快照保存与切换
 - 支持本地 JSON 导入导出
 - 不包含 WebDAV 或任何远程同步

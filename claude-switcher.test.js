@@ -134,6 +134,18 @@ async function testCaptureFiltersClaudeCookies() {
             hostOnly: true
         },
         {
+            name: "cf_clearance",
+            value: "cloudflare-clearance",
+            domain: ".claude.ai",
+            path: "/",
+            secure: true,
+            httpOnly: true,
+            sameSite: "none",
+            expirationDate: 1800000000,
+            session: false,
+            hostOnly: false
+        },
+        {
             name: "ignored",
             value: "x",
             domain: ".example.com",
@@ -149,6 +161,7 @@ async function testCaptureFiltersClaudeCookies() {
     assert.equal(profile.label, "Alice");
     assert.equal(profile.cookies.length, 2);
     assert.equal(profile.cookies.some((cookie) => cookie.name === "ignored"), false);
+    assert.equal(profile.cookies.some((cookie) => cookie.name === "cf_clearance"), false);
     assert.equal(app.state.currentProfileId, "profile-1");
     assert.equal(env.storage.get(app.constants.PROFILE_KEY).length, 1);
 }
@@ -194,6 +207,18 @@ async function testSwitchDeletesAndWritesProfileCookies() {
             expirationDate: 1800000000,
             session: false,
             hostOnly: false
+        },
+        {
+            name: "__cf_bm",
+            value: "browser-bound-cloudflare-cookie",
+            domain: ".claude.ai",
+            path: "/",
+            secure: true,
+            httpOnly: true,
+            sameSite: "none",
+            expirationDate: 1800000000,
+            session: false,
+            hostOnly: false
         }
     ];
 
@@ -204,6 +229,9 @@ async function testSwitchDeletesAndWritesProfileCookies() {
     assert.equal(switched, true);
     assert.equal(storedSession.value, "A_SESSION");
     assert.equal(setTheme.details.domain, undefined, "hostOnly cookies should be restored without a domain field");
+    assert.equal(env.jar.cookies.some((cookie) => cookie.name === "__cf_bm"), true);
+    assert.equal(env.calls.some((call) => call.method === "delete" && call.details.name === "__cf_bm"), false);
+    assert.equal(env.calls.some((call) => call.method === "set" && call.details.name === "__cf_bm"), false);
     assert.equal(env.redirects.at(-1), "https://claude.ai/");
     assert.equal(env.calls.some((call) => call.method === "delete"), true);
 }
@@ -236,6 +264,54 @@ async function testExportImportRoundTrip() {
     assert.equal(result.replaced, 0);
     assert.equal(secondApp.state.profiles[0].label, "Alice");
     assert.equal(secondApp.state.profiles[0].cookies[0].name, "sessionKeyV2");
+}
+
+async function testImportDropsCloudflareCookies() {
+    const env = makeRuntime([]);
+    const app = createClaudeCookieSwitcher(env.runtime);
+    const raw = JSON.stringify({
+        version: 1,
+        target: "https://claude.ai/",
+        profiles: [
+            {
+                id: "profile-with-cf",
+                label: "Legacy",
+                capturedAt: "2026-06-13T08:00:00.000Z",
+                cookies: [
+                    {
+                        name: "sessionKey",
+                        value: "one",
+                        domain: ".claude.ai",
+                        path: "/",
+                        secure: true,
+                        httpOnly: true,
+                        sameSite: "lax",
+                        expirationDate: 1800000000,
+                        session: false,
+                        hostOnly: false
+                    },
+                    {
+                        name: "cf_chl_rc_i",
+                        value: "challenge",
+                        domain: ".claude.ai",
+                        path: "/",
+                        secure: true,
+                        httpOnly: true,
+                        sameSite: "none",
+                        expirationDate: 1800000000,
+                        session: false,
+                        hostOnly: false
+                    }
+                ]
+            }
+        ]
+    });
+
+    app.importProfilesFromJson(raw);
+
+    assert.equal(app.state.profiles.length, 1);
+    assert.equal(app.state.profiles[0].cookies.length, 1);
+    assert.equal(app.state.profiles[0].cookies[0].name, "sessionKey");
 }
 
 async function testImportReplacesSameId() {
@@ -282,6 +358,7 @@ async function testImportReplacesSameId() {
     await testCaptureFiltersClaudeCookies();
     await testSwitchDeletesAndWritesProfileCookies();
     await testExportImportRoundTrip();
+    await testImportDropsCloudflareCookies();
     await testImportReplacesSameId();
     console.log("All Claude switcher tests passed.");
 })().catch((error) => {
