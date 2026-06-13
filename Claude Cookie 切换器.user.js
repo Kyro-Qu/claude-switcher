@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Cookie 切换器
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @description  本地保存 claude.ai 登录 Cookie 快照，并在家庭成员账号之间切换；自动排除 Cloudflare 风控 Cookie 并清理前端缓存。
 // @author       froger
 // @match        https://claude.ai/*
@@ -257,6 +257,10 @@
         return cookies
             .filter((cookie) => constants.AUTH_COOKIE_NAMES.includes(cookie.name))
             .map((cookie) => cookie.name);
+    }
+
+    function cookieNameSummary(cookies) {
+        return Array.from(new Set(cookies.map((cookie) => cookie.name))).sort();
     }
 
     function getCurrentProfile() {
@@ -613,6 +617,53 @@
         } catch (error) {
             toast(`保存失败: ${formatError(error)}`, "error", 7000);
             return null;
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function diagnoseCookieAccess() {
+        setBusy(true, "诊断 Cookie...");
+        try {
+            const cookies = await listClaudeCookies();
+            const authNames = authCookieNames(cookies);
+            const report = {
+                version: "1.0.4",
+                target: constants.HOME_URL,
+                createdAt: new Date(nowFn()).toISOString(),
+                gmCookieAvailable: Boolean(gm.cookie),
+                cookieCount: cookies.length,
+                httpOnlyCount: cookies.filter((cookie) => cookie.httpOnly).length,
+                authCookieNames: authNames,
+                cookieNames: cookieNameSummary(cookies),
+                hasSessionKeyLC: cookies.some((cookie) => cookie.name === "sessionKeyLC"),
+                canSwitch: authNames.length > 0,
+                hint: authNames.length > 0
+                    ? "已读取到 Claude 认证 Cookie，可以保存并切换。"
+                    : "未读取到 sessionKey/sessionKeyV2。若已登录 Claude，说明当前油猴环境读不到 HttpOnly 认证 Cookie，请使用 Tampermonkey Beta 或浏览器扩展方案。"
+            };
+            gm.setClipboard(JSON.stringify(report, null, 2), "text");
+
+            if (report.canSwitch) {
+                toast(`诊断通过：读到 ${report.cookieCount} 个 Cookie，认证 Cookie: ${authNames.join(", ")}。诊断已复制。`, "success", 7000);
+            } else if (report.cookieCount > 0) {
+                toast(`诊断失败：读到 ${report.cookieCount} 个普通 Cookie，但没有 sessionKey/sessionKeyV2。诊断已复制。`, "error", 9000);
+            } else {
+                toast("诊断失败：没有读到 claude.ai Cookie。请确认已登录、脚本权限和 Tampermonkey Cookie API。诊断已复制。", "error", 9000);
+            }
+            return report;
+        } catch (error) {
+            const report = {
+                version: "1.0.4",
+                target: constants.HOME_URL,
+                createdAt: new Date(nowFn()).toISOString(),
+                gmCookieAvailable: Boolean(gm.cookie),
+                error: formatError(error),
+                canSwitch: false
+            };
+            gm.setClipboard(JSON.stringify(report, null, 2), "text");
+            toast(`诊断失败: ${formatError(error)}。诊断已复制。`, "error", 9000);
+            return report;
         } finally {
             setBusy(false);
         }
@@ -979,7 +1030,7 @@
             }
             .ccs-tools {
                 display: grid;
-                grid-template-columns: repeat(3, minmax(0, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 8px;
                 margin-top: 10px;
                 padding-top: 10px;
@@ -1125,6 +1176,7 @@
                     <button class="ccs-btn" id="claude-import-profiles">导入</button>
                     <button class="ccs-btn" id="claude-export-profiles">导出</button>
                     <button class="ccs-btn" id="claude-copy-current">复制当前</button>
+                    <button class="ccs-btn" id="claude-diagnose-cookies">诊断</button>
                 </div>
             </div>
         `;
@@ -1205,6 +1257,7 @@
             }
             copyExport([profile], "已复制选中账号 JSON。");
         };
+        byId("claude-diagnose-cookies").onclick = () => diagnoseCookieAccess();
         byId("claude-import-run").onclick = () => importFromModal();
         byId("claude-import-cancel").onclick = () => closeModal("claude-import-modal");
         byId("claude-minimize").onclick = () => togglePanel(panel, minIcon, true);
@@ -1228,6 +1281,7 @@
         });
 
         gm.registerMenuCommand("Claude 切换器：保存当前账号", () => captureCurrentProfile());
+        gm.registerMenuCommand("Claude 切换器：诊断 Cookie 权限", () => diagnoseCookieAccess());
         gm.registerMenuCommand("Claude 切换器：导出全部 JSON", () => copyExport(state.profiles, "已复制全部账号 JSON 备份。"));
         gm.registerMenuCommand("Claude 切换器：重置面板位置", () => {
             savePanelState({ top: "84px", right: "36px", minimized: false });
@@ -1358,6 +1412,7 @@
         state,
         run,
         captureCurrentProfile,
+        diagnoseCookieAccess,
         switchToProfile,
         importProfilesFromJson,
         exportData,
@@ -1378,6 +1433,7 @@
             clearClaudeClientState,
             hasAuthCookie,
             authCookieNames,
+            cookieNameSummary,
             normalizeIndex,
             resolveRelativeIndex,
             formatError

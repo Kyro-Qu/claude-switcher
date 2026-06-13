@@ -393,6 +393,46 @@ async function testSwitchRejectsProfileWithoutAuthCookie() {
     assert.equal(env.redirects.length, 0);
 }
 
+async function testDiagnoseCookieAccessCopiesSafeReport() {
+    const env = makeRuntime([
+        {
+            name: "activitySessionId",
+            value: "SECRET_ACTIVITY_VALUE",
+            domain: "claude.ai",
+            path: "/",
+            secure: true,
+            httpOnly: false,
+            sameSite: "lax",
+            expirationDate: 1800000000,
+            session: false,
+            hostOnly: true
+        },
+        {
+            name: "sessionKeyLC",
+            value: "SECRET_LC_VALUE",
+            domain: ".claude.ai",
+            path: "/",
+            secure: true,
+            httpOnly: false,
+            sameSite: "lax",
+            expirationDate: 1800000000,
+            session: false,
+            hostOnly: false
+        }
+    ]);
+    const app = createClaudeCookieSwitcher(env.runtime);
+
+    const report = await app.diagnoseCookieAccess();
+    const copied = JSON.parse(env.clipboard.value);
+
+    assert.equal(report.canSwitch, false);
+    assert.equal(copied.canSwitch, false);
+    assert.deepEqual(copied.authCookieNames, []);
+    assert.deepEqual(copied.cookieNames, ["activitySessionId", "sessionKeyLC"]);
+    assert.equal(env.clipboard.value.includes("SECRET_ACTIVITY_VALUE"), false);
+    assert.equal(env.clipboard.value.includes("SECRET_LC_VALUE"), false);
+}
+
 async function testExportImportRoundTrip() {
     const env = makeRuntime([
         {
@@ -516,6 +556,7 @@ async function testImportReplacesSameId() {
     await testCaptureMergesPartitionedAndUnpartitionedCookies();
     await testSwitchDeletesAndWritesProfileCookies();
     await testSwitchRejectsProfileWithoutAuthCookie();
+    await testDiagnoseCookieAccessCopiesSafeReport();
     await testExportImportRoundTrip();
     await testImportDropsCloudflareCookies();
     await testImportReplacesSameId();

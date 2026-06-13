@@ -14,6 +14,7 @@
 - 面板可拖拽、可最小化
 - 自动排除 `cf_clearance`、`__cf_bm`、`_cfuvid` 等 Cloudflare 风控 Cookie，降低触发封锁页的概率
 - 切换账号后自动清理 Claude 前端缓存，并强制整页刷新
+- 提供 Cookie 权限诊断，不复制任何 Cookie 值
 
 ## 文件说明
 
@@ -42,6 +43,20 @@
 如果提示没有读取到 Cookie，或提示缺少 `sessionKey/sessionKeyV2`，通常说明 Tampermonkey 没有拿到 `HttpOnly` Cookie。请确认使用 Tampermonkey Beta，并重新登录 Claude 后再保存。
 
 导出的 JSON 里必须包含 `sessionKey` 或 `sessionKeyV2` 才能真正切换 Claude 登录账号。只有 `activitySessionId`、`sessionKeyLC`、`lastActiveOrg`、`anthropic-device-id` 这类 Cookie 时，脚本会拒绝保存或拒绝切换，因为这些不是完整登录凭证。
+
+## Cookie 权限诊断
+
+如果保存时提示缺少 `sessionKey/sessionKeyV2`，点击浮窗里的 `诊断`。
+
+诊断会复制一份不包含 Cookie 值的 JSON，里面只包含：
+
+- 是否存在 `GM_cookie`
+- 读取到的 Cookie 数量
+- 读取到的 Cookie 名称
+- 是否读到 `sessionKey` 或 `sessionKeyV2`
+- 是否可以用于切换
+
+如果诊断结果里 `canSwitch` 是 `false`，并且 `authCookieNames` 是空数组，说明当前油猴环境读不到 Claude 的 HttpOnly 登录 Cookie。此时脚本无法真正切换账号，需要换 Tampermonkey Beta，或改用具备浏览器 Cookie 权限的扩展方案。
 
 ## 遇到 Cloudflare blocked 页面
 
@@ -133,8 +148,9 @@ node claude-switcher.test.js
 
 ## 版本
 
-当前版本：`v1.0.3`
+当前版本：`v1.0.4`
 
+- `v1.0.4`：增加 Cookie 权限诊断按钮，复制不含 Cookie 值的安全诊断报告
 - `v1.0.3`：合并多种 Cookie 查询方式，避免漏读未分区认证 Cookie；不再把 `activitySessionId` 当作可切换认证凭证
 - `v1.0.2`：切换后清理 localStorage、sessionStorage、IndexedDB、Cache 和 Service Worker，并强制刷新页面
 - `v1.0.1`：排除 Cloudflare 风控 Cookie，减少 `Sorry, you have been blocked` 的风险
