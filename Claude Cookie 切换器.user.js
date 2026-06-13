@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Claude Cookie 切换器
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
-// @description  本地保存 claude.ai 登录 Cookie 快照，并在家庭成员账号之间切换；自动排除 Cloudflare 风控 Cookie。
+// @version      1.0.2
+// @description  本地保存 claude.ai 登录 Cookie 快照，并在家庭成员账号之间切换；自动排除 Cloudflare 风控 Cookie 并清理前端缓存。
 // @author       froger
 // @match        https://claude.ai/*
 // @match        https://*.claude.ai/*
@@ -26,6 +26,7 @@
     const constants = {
         HOME_URL: "https://claude.ai/",
         TARGET_HOST: "claude.ai",
+        RELOAD_PARAM: "claude_switcher_reload",
         PROFILE_KEY: "claude_cookie_profiles_v1",
         CURRENT_PROFILE_KEY: "claude_current_profile_id",
         PANEL_STATE_KEY: "claude_panel_state_v1",
@@ -46,6 +47,11 @@
     const documentObj = runtime.document || (typeof document !== "undefined" ? document : null);
     const windowObj = runtime.window || (typeof window !== "undefined" ? window : null);
     const locationObj = runtime.location || (typeof location !== "undefined" ? location : null);
+    const localStorageObj = runtime.localStorage || getWindowObject("localStorage");
+    const sessionStorageObj = runtime.sessionStorage || getWindowObject("sessionStorage");
+    const indexedDBObj = runtime.indexedDB || getWindowObject("indexedDB");
+    const cachesObj = runtime.caches || getWindowObject("caches");
+    const navigatorObj = runtime.navigator || getWindowObject("navigator");
     const confirmFn = runtime.confirm || (typeof confirm === "function" ? confirm : (() => true));
     const promptFn = runtime.prompt || (typeof prompt === "function" ? prompt : (() => ""));
     const setTimeoutFn = runtime.setTimeout || (typeof setTimeout === "function" ? setTimeout : ((fn) => fn()));
@@ -71,6 +77,14 @@
             return cryptoObj.randomUUID();
         }
         return `profile-${nowFn().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    function getWindowObject(name) {
+        try {
+            return windowObj ? windowObj[name] : null;
+        } catch (_error) {
+            return null;
+        }
     }
 
     function cloneJson(value) {
@@ -447,6 +461,91 @@
         };
     }
 
+    async function clearClaudeClientState() {
+        const result = {
+            localStorage: false,
+            sessionStorage: false,
+            caches: 0,
+            indexedDB: 0,
+            serviceWorkers: 0,
+            errors: []
+        };
+
+        try {
+            if (localStorageObj && typeof localStorageObj.clear === "function") {
+                localStorageObj.clear();
+                result.localStorage = true;
+            }
+        } catch (error) {
+            result.errors.push(`localStorage: ${formatError(error)}`);
+        }
+
+        try {
+            if (sessionStorageObj && typeof sessionStorageObj.clear === "function") {
+                sessionStorageObj.clear();
+                result.sessionStorage = true;
+            }
+        } catch (error) {
+            result.errors.push(`sessionStorage: ${formatError(error)}`);
+        }
+
+        try {
+            if (cachesObj && typeof cachesObj.keys === "function" && typeof cachesObj.delete === "function") {
+                const keys = await cachesObj.keys();
+                for (const key of keys) {
+                    if (await cachesObj.delete(key)) {
+                        result.caches += 1;
+                    }
+                }
+            }
+        } catch (error) {
+            result.errors.push(`Cache: ${formatError(error)}`);
+        }
+
+        try {
+            if (indexedDBObj && typeof indexedDBObj.databases === "function" && typeof indexedDBObj.deleteDatabase === "function") {
+                const databases = await indexedDBObj.databases();
+                for (const database of databases || []) {
+                    if (!database || !database.name) continue;
+                    await deleteDatabase(database.name);
+                    result.indexedDB += 1;
+                }
+            }
+        } catch (error) {
+            result.errors.push(`IndexedDB: ${formatError(error)}`);
+        }
+
+        try {
+            const serviceWorker = navigatorObj && navigatorObj.serviceWorker;
+            if (serviceWorker && typeof serviceWorker.getRegistrations === "function") {
+                const registrations = await serviceWorker.getRegistrations();
+                for (const registration of registrations || []) {
+                    if (registration && typeof registration.unregister === "function") {
+                        await registration.unregister();
+                        result.serviceWorkers += 1;
+                    }
+                }
+            }
+        } catch (error) {
+            result.errors.push(`ServiceWorker: ${formatError(error)}`);
+        }
+
+        return result;
+    }
+
+    function deleteDatabase(name) {
+        return new Promise((resolve) => {
+            try {
+                const request = indexedDBObj.deleteDatabase(name);
+                request.onsuccess = () => resolve(true);
+                request.onerror = () => resolve(false);
+                request.onblocked = () => resolve(false);
+            } catch (_error) {
+                resolve(false);
+            }
+        });
+    }
+
     async function captureCurrentProfile(labelFromCaller) {
         if (state.busy) return null;
         setBusy(true, "读取 Cookie...");
@@ -542,7 +641,12 @@
                 toast(`已切换到「${profile.label}」。`, "success");
             }
 
-            setTimeoutFn(() => redirectHome(), 800);
+            const clientState = await clearClaudeClientState();
+            if (clientState.errors.length) {
+                toast(`已写入 Cookie，但部分前端缓存清理失败: ${clientState.errors.join("；")}`, "info", 8000);
+            }
+
+            setTimeoutFn(() => redirectHome(true), 800);
             return true;
         } catch (error) {
             toast(`切换失败: ${formatError(error)}`, "error", 7000);
@@ -552,8 +656,12 @@
         }
     }
 
-    function redirectHome() {
+    function redirectHome(forceReload = false) {
         if (locationObj && typeof locationObj.replace === "function") {
+            if (forceReload) {
+                locationObj.replace(`${constants.HOME_URL}?${constants.RELOAD_PARAM}=${nowFn()}`);
+                return;
+            }
             locationObj.replace(constants.HOME_URL);
         }
     }
@@ -1249,6 +1357,7 @@
             deleteCurrentClaudeCookies,
             setProfileCookies,
             verifyProfileCookies,
+            clearClaudeClientState,
             hasAuthCookie,
             normalizeIndex,
             resolveRelativeIndex,

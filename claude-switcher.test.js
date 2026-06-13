@@ -19,6 +19,13 @@ function makeRuntime(initialCookies = [], existingStorage = null) {
     const clipboard = { value: "" };
     const redirects = [];
     const calls = [];
+    const clientState = {
+        localStorageCleared: 0,
+        sessionStorageCleared: 0,
+        cachesDeleted: [],
+        indexedDBDeleted: [],
+        serviceWorkersUnregistered: 0
+    };
     const jar = {
         cookies: clone(initialCookies),
         list(details, callback) {
@@ -68,6 +75,7 @@ function makeRuntime(initialCookies = [], existingStorage = null) {
         clipboard,
         redirects,
         calls,
+        clientState,
         jar,
         runtime: {
             autoInit: false,
@@ -103,6 +111,52 @@ function makeRuntime(initialCookies = [], existingStorage = null) {
                 },
                 registerMenuCommand() {},
                 cookie: jar
+            },
+            localStorage: {
+                clear() {
+                    clientState.localStorageCleared += 1;
+                }
+            },
+            sessionStorage: {
+                clear() {
+                    clientState.sessionStorageCleared += 1;
+                }
+            },
+            caches: {
+                async keys() {
+                    return ["claude-cache"];
+                },
+                async delete(key) {
+                    clientState.cachesDeleted.push(key);
+                    return true;
+                }
+            },
+            indexedDB: {
+                async databases() {
+                    return [{ name: "claude-db" }];
+                },
+                deleteDatabase(name) {
+                    clientState.indexedDBDeleted.push(name);
+                    const request = {};
+                    queueMicrotask(() => {
+                        if (typeof request.onsuccess === "function") request.onsuccess();
+                    });
+                    return request;
+                }
+            },
+            navigator: {
+                serviceWorker: {
+                    async getRegistrations() {
+                        return [
+                            {
+                                async unregister() {
+                                    clientState.serviceWorkersUnregistered += 1;
+                                    return true;
+                                }
+                            }
+                        ];
+                    }
+                }
             }
         }
     };
@@ -232,8 +286,13 @@ async function testSwitchDeletesAndWritesProfileCookies() {
     assert.equal(env.jar.cookies.some((cookie) => cookie.name === "__cf_bm"), true);
     assert.equal(env.calls.some((call) => call.method === "delete" && call.details.name === "__cf_bm"), false);
     assert.equal(env.calls.some((call) => call.method === "set" && call.details.name === "__cf_bm"), false);
-    assert.equal(env.redirects.at(-1), "https://claude.ai/");
+    assert.equal(env.redirects.at(-1).startsWith("https://claude.ai/?claude_switcher_reload="), true);
     assert.equal(env.calls.some((call) => call.method === "delete"), true);
+    assert.equal(env.clientState.localStorageCleared, 1);
+    assert.equal(env.clientState.sessionStorageCleared, 1);
+    assert.deepEqual(env.clientState.cachesDeleted, ["claude-cache"]);
+    assert.deepEqual(env.clientState.indexedDBDeleted, ["claude-db"]);
+    assert.equal(env.clientState.serviceWorkersUnregistered, 1);
 }
 
 async function testExportImportRoundTrip() {

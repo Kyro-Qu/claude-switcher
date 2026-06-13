@@ -13,6 +13,7 @@
 - 本地保存数据，不上传到任何服务器
 - 面板可拖拽、可最小化
 - 自动排除 `cf_clearance`、`__cf_bm`、`_cfuvid` 等 Cloudflare 风控 Cookie，降低触发封锁页的概率
+- 切换账号后自动清理 Claude 前端缓存，并强制整页刷新
 
 ## 文件说明
 
@@ -68,7 +69,15 @@ You are unable to access claude.ai
 - `指定序号`：输入账号序号后切换
 - `删除账号`：只删除本地保存的 Cookie 快照，不会删除 Claude 账号
 
-切换时脚本会先删除当前 `claude.ai` Cookie，再写入目标账号保存的 Cookie，然后跳转回 `https://claude.ai/`。如果 Cookie 已过期，可能需要重新登录对应账号并重新点击 `保存当前`。
+切换时脚本会先删除当前 `claude.ai` Cookie，再写入目标账号保存的 Cookie，随后清理 Claude 的前端缓存并强制刷新页面。如果 Cookie 已过期，可能需要重新登录对应账号并重新点击 `保存当前`。
+
+如果点击切换后仍然显示原账号，请按顺序排查：
+
+1. 确认安装的是 `v1.0.2` 或更新版本。
+2. 确认使用 Tampermonkey Beta，并允许脚本使用 `GM_cookie`。
+3. 导出账号 JSON，检查目标账号的 `cookies` 中是否包含 `sessionKey` 或 `sessionKeyV2`。
+4. 如果没有这些认证 Cookie，请分别登录每个 Claude 账号后重新点击 `保存当前`。
+5. 清理 `claude.ai` 站点数据后重新保存账号，避免旧快照继续复用。
 
 ## 导入与导出
 
@@ -122,8 +131,9 @@ node claude-switcher.test.js
 
 ## 版本
 
-当前版本：`v1.0.1`
+当前版本：`v1.0.2`
 
+- `v1.0.2`：切换后清理 localStorage、sessionStorage、IndexedDB、Cache 和 Service Worker，并强制刷新页面
 - `v1.0.1`：排除 Cloudflare 风控 Cookie，减少 `Sorry, you have been blocked` 的风险
 - 支持 `claude.ai` Cookie 快照保存与切换
 - 支持本地 JSON 导入导出
