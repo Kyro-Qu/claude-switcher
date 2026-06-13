@@ -41,6 +41,8 @@
 
 如果提示没有读取到 Cookie，或提示缺少 `sessionKey/sessionKeyV2`，通常说明 Tampermonkey 没有拿到 `HttpOnly` Cookie。请确认使用 Tampermonkey Beta，并重新登录 Claude 后再保存。
 
+导出的 JSON 里必须包含 `sessionKey` 或 `sessionKeyV2` 才能真正切换 Claude 登录账号。只有 `activitySessionId`、`sessionKeyLC`、`lastActiveOrg`、`anthropic-device-id` 这类 Cookie 时，脚本会拒绝保存或拒绝切换，因为这些不是完整登录凭证。
+
 ## 遇到 Cloudflare blocked 页面
 
 如果安装或切换后看到：
@@ -73,7 +75,7 @@ You are unable to access claude.ai
 
 如果点击切换后仍然显示原账号，请按顺序排查：
 
-1. 确认安装的是 `v1.0.2` 或更新版本。
+1. 确认安装的是 `v1.0.3` 或更新版本。
 2. 确认使用 Tampermonkey Beta，并允许脚本使用 `GM_cookie`。
 3. 导出账号 JSON，检查目标账号的 `cookies` 中是否包含 `sessionKey` 或 `sessionKeyV2`。
 4. 如果没有这些认证 Cookie，请分别登录每个 Claude 账号后重新点击 `保存当前`。
@@ -131,8 +133,9 @@ node claude-switcher.test.js
 
 ## 版本
 
-当前版本：`v1.0.2`
+当前版本：`v1.0.3`
 
+- `v1.0.3`：合并多种 Cookie 查询方式，避免漏读未分区认证 Cookie；不再把 `activitySessionId` 当作可切换认证凭证
 - `v1.0.2`：切换后清理 localStorage、sessionStorage、IndexedDB、Cache 和 Service Worker，并强制刷新页面
 - `v1.0.1`：排除 Cloudflare 风控 Cookie，减少 `Sorry, you have been blocked` 的风险
 - 支持 `claude.ai` Cookie 快照保存与切换

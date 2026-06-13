@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Cookie 切换器
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @description  本地保存 claude.ai 登录 Cookie 快照，并在家庭成员账号之间切换；自动排除 Cloudflare 风控 Cookie 并清理前端缓存。
 // @author       froger
 // @match        https://claude.ai/*
@@ -31,7 +31,7 @@
         CURRENT_PROFILE_KEY: "claude_current_profile_id",
         PANEL_STATE_KEY: "claude_panel_state_v1",
         EXPORT_VERSION: 1,
-        AUTH_COOKIE_NAMES: ["sessionKey", "sessionKeyV2", "activitySessionId"],
+        AUTH_COOKIE_NAMES: ["sessionKey", "sessionKeyV2"],
         EXCLUDED_COOKIE_NAMES: ["cf_clearance", "__cf_bm", "_cfuvid", "__cflb", "__cfseq"]
     };
 
@@ -253,6 +253,12 @@
         return cookies.some((cookie) => constants.AUTH_COOKIE_NAMES.includes(cookie.name));
     }
 
+    function authCookieNames(cookies) {
+        return cookies
+            .filter((cookie) => constants.AUTH_COOKIE_NAMES.includes(cookie.name))
+            .map((cookie) => cookie.name);
+    }
+
     function getCurrentProfile() {
         return state.profiles.find((profile) => profile.id === state.currentProfileId) || null;
     }
@@ -360,22 +366,29 @@
     }
 
     async function listClaudeCookies() {
-        let cookies = [];
-        try {
-            cookies = await cookieList({ url: constants.HOME_URL, partitionKey: {} });
-        } catch (error) {
-            cookies = await cookieList({ url: constants.HOME_URL });
-        }
+        const collected = [];
+        const errors = [];
+        const queries = [
+            { url: constants.HOME_URL },
+            { url: constants.HOME_URL, partitionKey: {} },
+            { domain: constants.TARGET_HOST },
+            { domain: `.${constants.TARGET_HOST}` }
+        ];
 
-        if (!cookies.length) {
+        for (const queryDetails of queries) {
             try {
-                cookies = await cookieList({ url: constants.HOME_URL });
-            } catch (_error) {
-                // Keep the original empty result if the fallback is unavailable.
+                const cookies = await cookieList(queryDetails);
+                if (Array.isArray(cookies)) collected.push(...cookies);
+            } catch (error) {
+                errors.push(formatError(error));
             }
         }
 
-        return normalizeCookieList(cookies);
+        const normalized = normalizeCookieList(collected);
+        if (!normalized.length && errors.length === queries.length) {
+            throw new Error(errors[0] || "读取 Cookie 失败");
+        }
+        return normalized;
     }
 
     function buildSetDetails(cookie) {
@@ -556,6 +569,10 @@
                 toast("未读取到 claude.ai Cookie。请确认已登录 Claude，并使用支持 HttpOnly 的 Tampermonkey Beta。", "error", 6000);
                 return null;
             }
+            if (!hasAuthCookie(cookies)) {
+                toast("未读取到 sessionKey/sessionKeyV2，当前环境保存的快照无法用于切换。请使用 Tampermonkey Beta，重新登录 Claude 后再保存。", "error", 9000);
+                return null;
+            }
 
             let label = labelFromCaller;
             if (typeof label !== "string") {
@@ -591,11 +608,7 @@
             state.selectedProfileId = profile.id;
             saveProfiles();
 
-            if (hasAuthCookie(cookies)) {
-                toast(`已保存「${profile.label}」，共 ${cookies.length} 个 Cookie。`, "success");
-            } else {
-                toast("已保存 Cookie，但未发现 sessionKey/sessionKeyV2。若无法切换，请启用 Tampermonkey Beta 的 HttpOnly Cookie 访问后重新保存。", "info", 7000);
-            }
+            toast(`已保存「${profile.label}」，共 ${cookies.length} 个 Cookie，认证 Cookie: ${authCookieNames(cookies).join(", ")}。`, "success");
             return profile;
         } catch (error) {
             toast(`保存失败: ${formatError(error)}`, "error", 7000);
@@ -619,6 +632,11 @@
 
         if (!profile.cookies.length) {
             toast("该账号没有可用 Cookie。", "error");
+            return false;
+        }
+
+        if (!hasAuthCookie(profile.cookies)) {
+            toast(`「${profile.label}」缺少 sessionKey/sessionKeyV2，无法切换。请更新到 Tampermonkey Beta 后重新登录并保存该账号。`, "error", 9000);
             return false;
         }
 
@@ -1359,6 +1377,7 @@
             verifyProfileCookies,
             clearClaudeClientState,
             hasAuthCookie,
+            authCookieNames,
             normalizeIndex,
             resolveRelativeIndex,
             formatError

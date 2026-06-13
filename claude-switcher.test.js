@@ -220,6 +220,55 @@ async function testCaptureFiltersClaudeCookies() {
     assert.equal(env.storage.get(app.constants.PROFILE_KEY).length, 1);
 }
 
+async function testCaptureMergesPartitionedAndUnpartitionedCookies() {
+    const env = makeRuntime([]);
+    env.jar.list = function list(details, callback) {
+        env.calls.push({ method: "list", details: clone(details) });
+        if (details.url && !details.partitionKey) {
+            callback([
+                {
+                    name: "sessionKeyV2",
+                    value: "AUTH_FROM_UNPARTITIONED_QUERY",
+                    domain: ".claude.ai",
+                    path: "/",
+                    secure: true,
+                    httpOnly: true,
+                    sameSite: "lax",
+                    expirationDate: 1800000000,
+                    session: false,
+                    hostOnly: false
+                }
+            ]);
+            return;
+        }
+        if (details.url && details.partitionKey) {
+            callback([
+                {
+                    name: "activitySessionId",
+                    value: "ACTIVITY_FROM_PARTITIONED_QUERY",
+                    domain: "claude.ai",
+                    path: "/",
+                    secure: true,
+                    httpOnly: false,
+                    sameSite: "lax",
+                    expirationDate: 1800000000,
+                    session: false,
+                    hostOnly: true
+                }
+            ]);
+            return;
+        }
+        callback([]);
+    };
+    const app = createClaudeCookieSwitcher(env.runtime);
+
+    const profile = await app.captureCurrentProfile("Merged");
+
+    assert.equal(profile.label, "Merged");
+    assert.deepEqual(profile.cookies.map((cookie) => cookie.name).sort(), ["activitySessionId", "sessionKeyV2"]);
+    assert.equal(env.calls.filter((call) => call.method === "list").length, 4);
+}
+
 async function testSwitchDeletesAndWritesProfileCookies() {
     const env = makeRuntime([
         {
@@ -293,6 +342,55 @@ async function testSwitchDeletesAndWritesProfileCookies() {
     assert.deepEqual(env.clientState.cachesDeleted, ["claude-cache"]);
     assert.deepEqual(env.clientState.indexedDBDeleted, ["claude-db"]);
     assert.equal(env.clientState.serviceWorkersUnregistered, 1);
+}
+
+async function testSwitchRejectsProfileWithoutAuthCookie() {
+    const env = makeRuntime([]);
+    const app = createClaudeCookieSwitcher(env.runtime);
+    app.importProfilesFromJson(JSON.stringify({
+        version: 1,
+        target: "https://claude.ai/",
+        profiles: [
+            {
+                id: "legacy-no-auth",
+                label: "Legacy No Auth",
+                capturedAt: "2026-06-13T09:08:34.959Z",
+                cookies: [
+                    {
+                        name: "activitySessionId",
+                        value: "not-auth",
+                        domain: "claude.ai",
+                        path: "/",
+                        secure: true,
+                        httpOnly: false,
+                        sameSite: "lax",
+                        expirationDate: 1800000000,
+                        session: false,
+                        hostOnly: true
+                    },
+                    {
+                        name: "sessionKeyLC",
+                        value: "not-auth-either",
+                        domain: ".claude.ai",
+                        path: "/",
+                        secure: true,
+                        httpOnly: false,
+                        sameSite: "lax",
+                        expirationDate: 1800000000,
+                        session: false,
+                        hostOnly: false
+                    }
+                ]
+            }
+        ]
+    }));
+
+    const switched = await app.switchToProfile(0);
+
+    assert.equal(switched, false);
+    assert.equal(env.calls.some((call) => call.method === "delete"), false);
+    assert.equal(env.calls.some((call) => call.method === "set"), false);
+    assert.equal(env.redirects.length, 0);
 }
 
 async function testExportImportRoundTrip() {
@@ -415,7 +513,9 @@ async function testImportReplacesSameId() {
 
 (async () => {
     await testCaptureFiltersClaudeCookies();
+    await testCaptureMergesPartitionedAndUnpartitionedCookies();
     await testSwitchDeletesAndWritesProfileCookies();
+    await testSwitchRejectsProfileWithoutAuthCookie();
     await testExportImportRoundTrip();
     await testImportDropsCloudflareCookies();
     await testImportReplacesSameId();
