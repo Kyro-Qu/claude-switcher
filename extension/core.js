@@ -6,7 +6,7 @@
     }
 })(typeof globalThis !== "undefined" ? globalThis : this, function() {
     const constants = {
-        VERSION: "1.1.0",
+        VERSION: "1.2.0",
         HOME_URL: "https://claude.ai/",
         TARGET_HOST: "claude.ai",
         PROFILE_KEY: "claude_cookie_profiles_v1",
