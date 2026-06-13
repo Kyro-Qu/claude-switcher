@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Cookie Switcher</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="header">
+      <div>
+        <h1>Claude 账号助手</h1>
+        <p id="version">Extension</p>
+      </div>
+      <button id="openClaude" class="icon-btn" title="打开 Claude">↗</button>
+    </header>
+
+    <section class="status">
+      <span>已保存</span>
+      <strong id="profileCount">0</strong>
+      <span id="currentLabel">未选择</span>
+    </section>
+
+    <label class="field">
+      <span>账号</span>
+      <select id="profileSelect"></select>
+    </label>
+
+    <label class="field">
+      <span>昵称</span>
+      <input id="labelInput" type="text" placeholder="例如：爸爸 / 工作号">
+    </label>
+
+    <div class="grid">
+      <button id="captureProfile" class="primary">保存当前</button>
+      <button id="switchProfile" class="primary">切换选中</button>
+      <button id="previousProfile">上一个</button>
+      <button id="nextProfile">下一个</button>
+      <button id="deleteProfile" class="danger">删除账号</button>
+      <button id="diagnose">诊断</button>
+    </div>
+
+    <section class="io">
+      <div class="io-actions">
+        <button id="exportAll">导出全部</button>
+        <button id="exportSelected">导出选中</button>
+        <button id="importProfiles">导入</button>
+      </div>
+      <textarea id="jsonArea" spellcheck="false" placeholder="导出的 JSON 会显示在这里；导入时也粘贴到这里"></textarea>
+    </section>
+
+    <p id="message" class="message">准备就绪</p>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

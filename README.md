@@ -1,6 +1,6 @@
 # Claude Cookie 切换器
 
-一个用于 `https://claude.ai/` 的 Tampermonkey 油猴脚本，可以在同一浏览器里保存多个 Claude 登录 Cookie 快照，并在家庭成员账号之间快速切换。
+一个用于 `https://claude.ai/` 的 Claude 账号 Cookie 切换工具。仓库同时提供 Chrome/Edge 扩展版和 Tampermonkey 油猴版；如果油猴读不到 `sessionKey/sessionKeyV2`，请优先使用扩展版。
 
 > Cookie 备份等同登录凭证。请只保存和导入你自己或家庭成员授权使用的账号，不要把导出的 JSON 发给不可信的人。
 
@@ -18,11 +18,66 @@
 
 ## 文件说明
 
+- `extension/`：Chrome/Edge Manifest V3 扩展版，推荐使用
 - `Claude Cookie 切换器.user.js`：油猴脚本本体
 - `claude-switcher.test.js`：Node.js mock 测试
+- `extension/extension-core.test.js`：扩展核心逻辑测试
 - `Grok SSO Cookie 切换器-5.9.txt`：参考脚本
 
-## 安装准备
+## 推荐方案：Chrome/Edge 扩展版
+
+扩展版使用浏览器原生 `chrome.cookies` API，能读取和写入 HttpOnly Cookie，比油猴版更适合 Claude 账号切换。
+
+### 安装扩展
+
+1. 打开 Chrome/Edge 的扩展管理页：
+   - Chrome：`chrome://extensions/`
+   - Edge：`edge://extensions/`
+2. 打开 `开发者模式`。
+3. 点击 `加载已解压的扩展程序`。
+4. 选择本仓库里的 `extension` 文件夹。
+5. 浏览器工具栏会出现 `Claude Cookie Switcher` 扩展。
+
+### 保存账号
+
+1. 打开 [https://claude.ai/](https://claude.ai/) 并正常登录一个 Claude 账号。
+2. 点击浏览器工具栏里的扩展图标。
+3. 在 `昵称` 输入框填入账号名称。
+4. 点击 `保存当前`。
+5. 成功时应提示认证 Cookie，例如 `sessionKey` 或 `sessionKeyV2`。
+6. 退出或切换登录状态，登录另一个 Claude 账号后重复保存。
+
+### 切换账号
+
+1. 在扩展弹窗的账号下拉框中选择目标账号。
+2. 点击 `切换选中`。
+3. 扩展会删除当前 Claude Cookie、写入目标账号 Cookie、清理 Claude 前端缓存，并刷新 Claude 标签页。
+
+如果切换后仍然不是目标账号，点击 `诊断`。诊断 JSON 不包含 Cookie 值，可以用来确认是否读到了 `sessionKey/sessionKeyV2`。
+
+### 导入导出
+
+- `导出全部`：导出所有账号 JSON，并复制到剪贴板。
+- `导出选中`：只导出当前选中的账号 JSON。
+- `导入`：把 JSON 粘贴到文本框后导入。
+
+扩展版和油猴版使用兼容的 JSON 结构，但旧油猴备份如果没有 `sessionKey/sessionKeyV2`，仍然无法用于真正切换。
+
+### 扩展权限说明
+
+- `cookies`：读取和写入 `claude.ai` 的 HttpOnly 登录 Cookie。
+- `storage`：把账号 Cookie 快照保存在本地浏览器扩展存储里。
+- `tabs`：找到并刷新 Claude 标签页。
+- `scripting`：在 Claude 标签页清理 `localStorage/sessionStorage`。
+- `browsingData`：清理 Claude 的 IndexedDB、Cache、Service Worker 等前端缓存。
+
+扩展的 `host_permissions` 只声明了 `https://claude.ai/*` 和 `https://*.claude.ai/*`。
+
+## 备选方案：Tampermonkey 油猴版
+
+油猴版适合 Tampermonkey Beta 能读取 HttpOnly Cookie 的环境。如果普通 Tampermonkey 读不到 `sessionKey/sessionKeyV2`，请改用上面的扩展版。
+
+### 安装准备
 
 1. 安装浏览器扩展 Tampermonkey。
 2. 建议使用 Tampermonkey Beta，因为 Claude 的登录 Cookie 通常包含 `HttpOnly`，普通版本可能无法完整读取或写入。
@@ -32,7 +87,7 @@
 
 安装成功后，页面右侧会出现 `Claude 账号助手` 浮窗。
 
-## 第一次保存账号
+### 第一次保存账号
 
 1. 在 `claude.ai` 正常登录第一个 Claude 账号。
 2. 点击浮窗里的 `保存当前`。
@@ -44,7 +99,7 @@
 
 导出的 JSON 里必须包含 `sessionKey` 或 `sessionKeyV2` 才能真正切换 Claude 登录账号。只有 `activitySessionId`、`sessionKeyLC`、`lastActiveOrg`、`anthropic-device-id` 这类 Cookie 时，脚本会拒绝保存或拒绝切换，因为这些不是完整登录凭证。
 
-## Cookie 权限诊断
+### Cookie 权限诊断
 
 如果保存时提示缺少 `sessionKey/sessionKeyV2`，点击浮窗里的 `诊断`。
 
@@ -56,7 +111,7 @@
 - 是否读到 `sessionKey` 或 `sessionKeyV2`
 - 是否可以用于切换
 
-如果诊断结果里 `canSwitch` 是 `false`，并且 `authCookieNames` 是空数组，说明当前油猴环境读不到 Claude 的 HttpOnly 登录 Cookie。此时脚本无法真正切换账号，需要换 Tampermonkey Beta，或改用具备浏览器 Cookie 权限的扩展方案。
+如果诊断结果里 `canSwitch` 是 `false`，并且 `authCookieNames` 是空数组，说明当前油猴环境读不到 Claude 的 HttpOnly 登录 Cookie。此时脚本无法真正切换账号，需要换 Tampermonkey Beta，或改用扩展版。
 
 ## 遇到 Cloudflare blocked 页面
 
@@ -77,7 +132,7 @@ You are unable to access claude.ai
 
 `v1.0.1` 起脚本会自动排除 Cloudflare 相关 Cookie；旧 JSON 备份导入时也会过滤这些 Cookie。
 
-## 切换账号
+### 切换账号
 
 保存至少两个账号后，可以使用以下按钮：
 
@@ -96,19 +151,19 @@ You are unable to access claude.ai
 4. 如果没有这些认证 Cookie，请分别登录每个 Claude 账号后重新点击 `保存当前`。
 5. 清理 `claude.ai` 站点数据后重新保存账号，避免旧快照继续复用。
 
-## 导入与导出
+### 导入与导出
 
-### 导出全部账号
+#### 导出全部账号
 
 点击 `导出`，脚本会把所有已保存账号的 JSON 备份复制到剪贴板。
 
 建议把备份保存在安全位置，例如本机加密笔记、密码管理器或受保护的离线文件中。
 
-### 复制当前账号
+#### 复制当前账号
 
 在下拉框中选择账号后，点击 `复制当前`，只复制该账号的 JSON 备份。
 
-### 导入备份
+#### 导入备份
 
 1. 点击 `导入`。
 2. 粘贴之前导出的 JSON。
@@ -142,14 +197,20 @@ You are unable to access claude.ai
 node --check "Claude Cookie 切换器.user.js"
 node --check claude-switcher.test.js
 node claude-switcher.test.js
+node --check extension/core.js
+node --check extension/background.js
+node --check extension/popup.js
+node --check extension/extension-core.test.js
+node extension/extension-core.test.js
 ```
 
-看到 `All Claude switcher tests passed.` 表示 mock 测试通过。
+看到 `All Claude switcher tests passed.` 和 `All extension core tests passed.` 表示测试通过。
 
 ## 版本
 
-当前版本：`v1.0.4`
+当前版本：`v1.1.0`
 
+- `v1.1.0`：新增 Chrome/Edge Manifest V3 扩展版，使用 `chrome.cookies` 读写 HttpOnly Cookie
 - `v1.0.4`：增加 Cookie 权限诊断按钮，复制不含 Cookie 值的安全诊断报告
 - `v1.0.3`：合并多种 Cookie 查询方式，避免漏读未分区认证 Cookie；不再把 `activitySessionId` 当作可切换认证凭证
 - `v1.0.2`：切换后清理 localStorage、sessionStorage、IndexedDB、Cache 和 Service Worker，并强制刷新页面
